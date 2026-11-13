@@ -47,6 +47,8 @@
     border-bottom: 1px dashed #e0e5e9; cursor: grab; border-radius: 8px; font-size: 14px; line-height: 1.3;
   }
   .work:last-child { border-bottom: 0; }
+  .work.flash { animation: workflash 1.8s ease; }
+  @keyframes workflash { 0%, 60% { box-shadow: 0 0 0 4px var(--amber); } 100% { box-shadow: 0 0 0 0 transparent; } }
   .work:hover { background: #f4f7f9; }
   .work.sel { background: #fff3d9; outline: 2px solid var(--rope); }
   .prio { flex: none; width: 20px; height: 20px; border-radius: 50%; border: 0; cursor: pointer; margin-top: 1px; box-shadow: inset 0 0 0 2px rgba(0,0,0,.08); }
@@ -135,6 +137,31 @@
   .chip:hover { filter: brightness(.96); }
   .chip.late { box-shadow: 0 0 0 1.5px var(--signal) inset; background: #fdf0f0; }
   .chip.skip { text-decoration: line-through; color: #8b979f; background: #f1f3f4; border-left-color: #b8c2ca !important; }
+
+  /* mehrtägige Arbeiten als durchgehender Balken */
+  .evsub { display: block; font-weight: 400; font-size: 10px; opacity: .9; overflow: hidden; text-overflow: ellipsis; }
+  .evgap { height: 31px; margin-bottom: 3px; }
+  .chip.tspan { height: 31px; position: relative; z-index: 1; border-left-width: 0; line-height: 1.25; padding-top: 3px; font-weight: 600; }
+  .chip.tspan.done { background: #e6f2ec !important; }
+  .chip.tspan.skip { background: #f1f3f4 !important; }
+  .chip.tspan.evs { border-left-width: 4px; width: calc(100% + 8px); margin-right: -8px; border-radius: 5px 0 0 5px; }
+  .chip.tspan.evm { width: calc(100% + 16px); margin-left: -8px; margin-right: -8px; border-radius: 0; }
+  .chip.tspan.eve { width: calc(100% + 8px); margin-left: -8px; border-radius: 0 5px 5px 0; }
+  .chip.tspan.slim { height: 9px; margin-top: 11px; margin-bottom: 14px; padding: 0; }
+  .yitem.yspan { border-radius: 0 4px 4px 0; font-weight: 600; }
+  .ywhen { font-weight: 400; color: #5f6c75; }
+  .tworow { display: flex; gap: 10px; }
+  .tworow > div { flex: 1; min-width: 0; }
+  @media (max-width: 640px) {
+    .evgap, .chip.tspan { height: 26px; }
+    .evgap { margin-bottom: 2px; }
+    .chip.tspan { display: block; white-space: nowrap; }
+    .evsub { font-size: 8.5px; }
+    .chip.tspan.evs { width: calc(100% + 4px); margin-right: -4px; }
+    .chip.tspan.evm { width: calc(100% + 8px); margin-left: -4px; margin-right: -4px; }
+    .chip.tspan.eve { width: calc(100% + 4px); margin-left: -4px; }
+    .chip.tspan.slim { height: 7px; margin-top: 9px; margin-bottom: 12px; }
+  }
 
   /* Was steht an */
   .duebar { max-width: 1240px; margin: 0 auto; padding: 12px 14px 0; }
@@ -724,14 +751,15 @@ function renderList(){
     if (collapsed) return;
     tasks.forEach(function(t){
       var planned = data.plan.filter(function(p){ return p.taskId === t.id && !p.done && !p.skip; })
-        .map(function(p){ return p.date; }).sort();
+        .map(function(p){ return p.date + (isSpan(p) ? "|" + p.end : ""); }).sort();
+      var fmtPl = function(x){ var a = x.split("|"); return a[1] ? fmtRange(a[0], a[1]) : deOf(a[0]); };
       var meta = planned.length > 0
-        ? "geplant: " + planned.slice(0, 3).map(deOf).join(", ") + (planned.length > 3 ? " …" : "")
+        ? "geplant: " + planned.slice(0, 3).map(fmtPl).join(", ") + (planned.length > 3 ? " …" : "")
         : (t.months.length > 0
             ? "üblich: " + t.months.map(function(m){ return MONTHS[m-1]; }).join(", ") + (t.rule ? " · " + ruleLabel(t.rule) : "")
             : "noch nicht terminiert");
       if (t.persons) meta += " · " + t.persons + (t.persons === 1 ? " Person" : " Personen");
-      h += '<li class="work' + (state.selTask === t.id ? " sel" : "") + '" draggable="true" '
+      h += '<li class="work' + (state.selTask === t.id ? " sel" : "") + '" id="task-' + t.id + '" draggable="true" '
         + 'ondragstart="dragTask(event,\'' + t.id + '\')" onclick="pickTask(\'' + t.id + '\')">'
         + '<button class="prio p' + t.prio + '" title="Priorität: ' + prioName[t.prio] + ' (antippen zum Ändern)" onclick="cyclePrio(event,\'' + t.id + '\')"></button>'
         + '<span class="worktext">' + esc(t.title) + '<span class="workmeta">' + esc(meta).replace(/\n/g, "<br>") + '</span></span>'
@@ -767,6 +795,16 @@ function jumpToArea(area){
   }
   el.classList.add("flash");
   setTimeout(function(){ el.classList.remove("flash"); }, 900);
+}
+
+// Liste zu einer Arbeit rollen und sie kurz aufleuchten lassen
+function showTask(id){
+  var el = document.getElementById("task-" + id);
+  if (!el) return;
+  // rollt die Liste und, falls nötig, auch die Seite
+  try { el.scrollIntoView({ block: "center" }); } catch (e) { el.scrollIntoView(); }
+  el.classList.add("flash");
+  setTimeout(function(){ el.classList.remove("flash"); }, 1800);
 }
 
 function pickTask(id){
@@ -833,11 +871,16 @@ function addWork(){
   if (!title) return toast("Bitte erst die Arbeit beschreiben");
   var exists = data.tasks.find(function(t){ return t.title.toLowerCase() === title.toLowerCase(); });
   if (exists) return toast("Diese Arbeit gibt es schon – bitte aus der Liste verwenden");
-  data.tasks.push({ id: uid(), area: document.getElementById("newarea").value, title: title, months: [], tools: "", prio: 2 });
+  var nid = uid(), narea = document.getElementById("newarea").value;
+  data.tasks.push({ id: nid, area: narea, title: title, months: [], tools: "", prio: 2 });
   inp.value = "";
   document.getElementById("dupbox").innerHTML = "";
-  toast("Arbeit aufgenommen");
+  // Neue Arbeit gleich auswählen und in der Liste zeigen, damit man sie nicht suchen muss
+  state.selTask = nid; state.movePlan = null;
+  state.closed[narea] = false;
+  toast("Arbeit aufgenommen und ausgewählt, jetzt einen Tag im Kalender antippen");
   saveData();
+  showTask(nid);
 }
 
 function openEdit(ev, id){
@@ -964,15 +1007,21 @@ function renderYear(){
   var byMonth = {};
   for (var i = 1; i <= 12; i++) byMonth[i] = [];
   data.plan.forEach(function(p){
-    if (p.date.slice(0, 4) !== String(state.y)) return;
     var t = data.tasks.find(function(x){ return x.id === p.taskId; });
     if (!t) return;
-    var m = parseInt(p.date.slice(5, 7), 10);
-    byMonth[m].push({ title: t.title, area: t.area || "", day: parseInt(p.date.slice(8, 10), 10), done: p.done });
+    var end = p.end || p.date;
+    for (var mm = 1; mm <= 12; mm++){
+      var key = state.y + "-" + pad(mm);
+      if (p.date.slice(0, 7) > key || end.slice(0, 7) < key) continue;
+      var sIn = p.date.slice(0, 7) === key, eIn = end.slice(0, 7) === key;
+      byMonth[mm].push({ title: t.title, area: t.area || "", day: sIn ? parseInt(p.date.slice(8, 10), 10) : 0, done: p.done || p.skip,
+        span: isSpan(p), range: isSpan(p) ? fmtRange(p.date, end) + " (" + durText(p.date, end) + ")" : "",
+        when: !isSpan(p) ? "" : (sIn && eIn) ? dm(p.date) + "–" + dm(end) : sIn ? "ab " + dm(p.date) : eIn ? "bis " + dm(end) : "läuft" });
+    }
   });
   var h = "";
   for (var m = 1; m <= 12; m++){
-    var list = byMonth[m].sort(function(a, b){ return a.day - b.day; });
+    var list = byMonth[m].sort(function(a, b){ return (b.span ? 1 : 0) - (a.span ? 1 : 0) || a.day - b.day; });
     var targetMode = !!(state.selTask || state.movePlan);
     h += '<div class="ycell' + (m === tm ? " current" : "") + (targetMode ? " target" : "") + '" onclick="openMonth(' + m + ')" '
       + 'ondragover="event.preventDefault();this.classList.add(\'dragover\')" '
@@ -982,7 +1031,8 @@ function renderYear(){
     h += '<div class="yname">' + MONTHS_LONG[m-1] + '</div>';
     if (list.length === 0) h += '<div class="yempty">–</div>';
     list.slice(0, 6).forEach(function(it){
-      h += '<div class="yitem' + (it.done ? " done" : "") + '" style="border-left-color:' + areaColor(it.area) + '" title="' + esc(it.title) + '">' + esc(it.title) + '</div>';
+      h += '<div class="yitem' + (it.done ? " done" : "") + (it.span ? " yspan" : "") + '" style="border-left-color:' + areaColor(it.area) + (it.span ? ';background:' + areaColor(it.area) + '24' : '') + '" '
+        + 'title="' + esc(it.title + (it.range ? " · " + it.range : "")) + '">' + esc(it.title) + (it.when ? ' <span class="ywhen">' + it.when + '</span>' : '') + '</div>';
     });
     if (list.length > 6) h += '<div class="ymore">+' + (list.length - 6) + ' weitere</div>';
     h += '</div>';
@@ -1012,10 +1062,79 @@ function dropMonth(ev, m){
 }
 
 // Summe der benötigten Personen an einem Tag (offene Arbeiten)
+// 07.–10.01.2027 oder 30.01.–02.02.2027
+function fmtRange(a, b){
+  if (!b || a === b) return deOf(a);
+  var A = a.split("-"), B = b.split("-");
+  if (A[0] === B[0] && A[1] === B[1]) return A[2] + ".–" + deOf(b);
+  if (A[0] === B[0]) return A[2] + "." + A[1] + ".–" + deOf(b);
+  return deOf(a) + "–" + deOf(b);
+}
+// Dauer in Worten
+function durText(from, to){
+  var n = daysBetween(to || from, from) + 1;
+  if (n <= 1) return "";
+  if (n < 14) return n + " Tage";
+  if (n < 63) return Math.round(n / 7) + " Wochen";
+  return "ca. " + Math.round(n / 30.4) + " Monate";
+}
+function dm(iso){ return iso.slice(8, 10) + "." + iso.slice(5, 7) + "."; }
+// Liegt der Kalendereintrag (mit Beginn und Ende) an diesem Tag?
+function planOn(p, iso){ return iso >= p.date && iso <= (p.end || p.date); }
+function isSpan(p){ return !!(p.end && p.end > p.date); }
+// Verschieben: Beginn neu setzen, die Dauer bleibt
+function movePlanTo(p, iso){
+  if (isSpan(p)) p.end = addDays(iso, daysBetween(p.end, p.date)); else delete p.end;
+  p.date = iso;
+}
+
+// Mehrtägige Arbeiten auf feste Zeilen verteilen, damit ein Balken über alle Tage in derselben Zeile bleibt
+function spanLanes(first, last){
+  var list = [];
+  data.plan.forEach(function(pl){
+    if (!isSpan(pl) || pl.date > last || pl.end < first) return;
+    var t = data.tasks.find(function(x){ return x.id === pl.taskId; });
+    if (t) list.push({ pl: pl, t: t, from: pl.date, to: pl.end, lane: 0 });
+  });
+  list.sort(function(a, b){ return a.from.localeCompare(b.from) || b.to.localeCompare(a.to); });
+  var ends = [];
+  list.forEach(function(it){
+    var l = 0;
+    while (l < ends.length && ends[l] >= it.from) l++;
+    ends[l] = it.to;
+    it.lane = l;
+  });
+  return list;
+}
+function laneItems(lanes, iso){
+  var out = [];
+  lanes.forEach(function(it){
+    if (iso >= it.from && iso <= it.to) out[it.lane] = it;
+  });
+  for (var i = 0; i < out.length; i++) if (!out[i]) out[i] = null;
+  return out;
+}
+// Mehrtägige Arbeit als Balken über ihre Dauer
+function spanChip(it, iso, d, wdMon){
+  var p = it.pl, t = it.t;
+  var len = daysBetween(it.to, it.from) + 1;
+  var isS = iso === it.from, isE = iso === it.to;
+  var cls = "chip tspan" + (p.done ? " done" : "") + (p.skip ? " skip" : "") + (isLate(p) ? " late" : "") + (isS ? " evs" : isE ? " eve" : " evm");
+  var inner;
+  if (isS) inner = esc(t.title) + '<span class="evsub">▶ Beginn · bis ' + dm(it.to) + '</span>';
+  else if (isE) inner = esc(t.title) + '<span class="evsub">Ende ◀ · seit ' + dm(it.from) + '</span>';
+  else if (len > 10 && !wdMon && d !== 1){ cls += " slim"; inner = ""; }
+  else inner = esc(t.title) + '<span class="evsub">Tag ' + (daysBetween(iso, it.from) + 1) + ' von ' + len + '</span>';
+  var pers = t.persons || 1;
+  var tip = (t.area ? t.area + " · " : "") + t.title + " · " + fmtRange(it.from, it.to) + " (" + durText(it.from, it.to) + ") · " + pers + (pers === 1 ? " Person" : " Personen");
+  return '<button class="' + cls + '" draggable="true" style="border-left-color:' + areaColor(t.area) + ';background:' + areaColor(t.area) + '2e" '
+    + 'ondragstart="dragPlan(event,\'' + p.id + '\')" onclick="chipMenu(event,\'' + p.id + '\')" title="' + esc(tip) + '" aria-label="' + esc(tip) + '">' + inner + '</button>';
+}
+
 function dayNeed(iso){
   var n = 0;
   data.plan.forEach(function(p){
-    if (p.date !== iso || p.done || p.skip) return;
+    if (!planOn(p, iso) || p.done || p.skip) return;
     var t = data.tasks.find(function(x){ return x.id === p.taskId; });
     if (t) n += (t.persons || 1);
   });
@@ -1024,7 +1143,7 @@ function dayNeed(iso){
 
 // Drucksymbol nur an Tagen mit geplanten Arbeiten (am Rechner beim Überfahren)
 function dayPrintBtn(iso){
-  if (!data.plan.some(function(p){ return p.date === iso; })) return "";
+  if (!data.plan.some(function(p){ return planOn(p, iso); })) return "";
   return '<button class="dayprint" title="Tagesblatt für diesen Tag drucken" aria-label="Tagesblatt drucken" '
     + 'onclick="event.stopPropagation();printDayMenu(\'' + iso + '\')">🖨</button>';
 }
@@ -1057,6 +1176,7 @@ function renderCal(){
   var todayIso = isoOf(now.getFullYear(), now.getMonth() + 1, now.getDate());
   var targetMode = !!(state.selTask || state.movePlan);
 
+  var lanes = spanLanes(isoOf(state.y, state.m, 1), isoOf(state.y, state.m, daysInMonth));
   var h = DOWS.map(function(d){ return '<div class="dow">' + d + '</div>'; }).join("");
   for (var i = 0; i < startOffset; i++) h += '<div class="day other"></div>';
   for (var d = 1; d <= daysInMonth; d++){
@@ -1067,7 +1187,11 @@ function renderCal(){
       + 'ondragleave="this.classList.remove(\'dragover\')" '
       + 'ondrop="dropDay(event,\'' + iso + '\')">'
       + '<div class="daynum">' + d + dayPrintBtn(iso) + dayNeedBadge(iso) + '</div>';
-    data.plan.filter(function(p){ return p.date === iso; }).forEach(function(p){
+    var wdMon = new Date(state.y, state.m - 1, d).getDay() === 1;
+    laneItems(lanes, iso).forEach(function(it){
+      h += it ? spanChip(it, iso, d, wdMon) : '<div class="evgap"></div>';
+    });
+    data.plan.filter(function(p){ return p.date === iso && !isSpan(p); }).forEach(function(p){
       var t = data.tasks.find(function(x){ return x.id === p.taskId; });
       if (!t) return;
       h += '<button class="chip' + (p.done ? " done" : "") + (p.skip ? " skip" : "") + (isLate(p) ? " late" : "") + '" draggable="true" '
@@ -1106,7 +1230,7 @@ function dayClick(iso){
       return;
     }
     data.plan.push({ id: uid(), taskId: state.selTask, date: iso, done: false });
-    toast((t ? t.title : "Arbeit") + " eingeplant am " + deOf(iso));
+    toast((t ? t.title : "Arbeit") + " eingeplant am " + deOf(iso) + ". Für Dauer und Details den Termin antippen.");
     state.selTask = null;
     saveData();
     if (isNarrow()) setView("list");
@@ -1116,7 +1240,7 @@ function dayClick(iso){
       toast("Diese Arbeit steht am " + deOf(iso) + " bereits im Kalender");
       return;
     }
-    if (p){ p.date = iso; toast("Verschoben auf " + deOf(iso)); }
+    if (p){ movePlanTo(p, iso); toast("Verschoben auf " + deOf(iso)); }
     state.movePlan = null;
     saveData();
   }
@@ -1145,7 +1269,7 @@ function dropDay(ev, iso){
       toast("Diese Arbeit steht am " + deOf(iso) + " bereits im Kalender");
       return;
     }
-    if (p){ p.date = iso; toast("Verschoben auf " + deOf(iso)); saveData(); }
+    if (p){ movePlanTo(p, iso); toast("Verschoben auf " + deOf(iso)); saveData(); }
   }
 }
 
@@ -1163,6 +1287,9 @@ function chipMenu(ev, planId){
   h += '<button class="closex" title="Schließen" aria-label="Schließen" onclick="closeChip()">✕</button>';
   h += '</div>';
 
+  h += '<div class="tworow"><div><label class="lbl">📅 Beginn</label><input class="einput" type="date" id="cm-from" value="' + p.date + '"></div>';
+  h += '<div><label class="lbl">Ende</label><input class="einput" type="date" id="cm-to" value="' + (p.end || p.date) + '"></div></div>';
+  h += '<p class="rulehint">Dauert die Arbeit länger als einen Tag, hier das Ende eintragen. Sie läuft dann als Balken durch den Kalender.</p>';
   h += '<label class="lbl">🧰 Werkzeug &amp; Material</label>';
   h += '<textarea class="einput ta" id="cm-tools" rows="2" placeholder="z. B. Leiter, Eimer, Handschuhe">' + esc(t.tools || "") + '</textarea>';
 
@@ -1177,9 +1304,9 @@ function chipMenu(ev, planId){
   h += '<button class="btn ghost numbtn" onclick="stepPersons(1)" aria-label="mehr">+</button>';
   h += '</div>';
 
-  h += '<button class="btn primary" style="margin-top:16px" onclick="saveChip()">Angaben speichern</button>';
+  h += '<button class="btn primary" style="margin-top:16px" onclick="saveChip()">Speichern</button>';
 
-  h += '<div class="actionsep">Termin am ' + deOf(p.date) + '</div>';
+  h += '<div class="actionsep">Termin ' + (isSpan(p) ? fmtRange(p.date, p.end) : 'am ' + deOf(p.date)) + '</div>';
   h += '<button class="btn ghost" onclick="togglePlanDone(\'' + planId + '\')">' + (p.done ? "Doch nicht erledigt" : "✓ Als erledigt markieren") + '</button>';
   h += '<button class="btn ghost" onclick="startMove(\'' + planId + '\')">→ Auf anderen Tag verschieben</button>';
   h += '<button class="btn ghost" onclick="togglePlanSkip(\'' + planId + '\')">' + (p.skip ? "Findet doch statt" : "⊘ Entfällt") + '</button>';
@@ -1198,7 +1325,8 @@ function chipSnapshot(){
   var pers = document.getElementById("cm-persons");
   var extra = document.getElementById("cm-safe-extra");
   if (!tools) return "";
-  return tools.value + "|" + pers.value + "|" + (extra ? extra.value : "") + "|" + (window.cmSafety || []).slice().sort().join(",");
+  var cf = document.getElementById("cm-from"), ct = document.getElementById("cm-to");
+  return (cf ? cf.value : "") + "|" + (ct ? ct.value : "") + "|" + tools.value + "|" + pers.value + "|" + (extra ? extra.value : "") + "|" + (window.cmSafety || []).slice().sort().join(",");
 }
 
 function closeChip(){
@@ -1256,6 +1384,12 @@ function saveChip(){
   if (!p) return;
   var t = data.tasks.find(function(x){ return x.id === p.taskId; });
   if (!t) return;
+  var nf = document.getElementById("cm-from").value, nt = document.getElementById("cm-to").value || nf;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(nf)) return toast("Bitte den Beginn eintragen");
+  if (nt < nf) return toast("Das Ende liegt vor dem Beginn");
+  if (nf !== p.date && alreadyOn(p.taskId, nf, p.id)) return toast("Diese Arbeit steht am " + deOf(nf) + " bereits im Kalender");
+  p.date = nf;
+  if (nt > nf) p.end = nt; else delete p.end;
   t.tools = document.getElementById("cm-tools").value.trim();
   var extra = document.getElementById("cm-safe-extra").value.split(",")
     .map(function(s){ return s.trim(); })
@@ -1269,7 +1403,7 @@ function saveChip(){
   t.persons = Math.max(1, Math.min(30, parseInt(document.getElementById("cm-persons").value, 10) || 1));
   window.cmStart = undefined;
   closeModal();
-  toast(extra.length > 0 ? "Gespeichert – neue Ausrüstung wurde gemerkt" : "Angaben gespeichert");
+  toast(extra.length > 0 ? "Gespeichert – neue Ausrüstung wurde gemerkt" : "Gespeichert");
   saveData();
 }
 
@@ -1367,7 +1501,7 @@ function daysBetween(a, b){
   return Math.round((new Date(a + "T12:00:00") - new Date(b + "T12:00:00")) / 86400000);
 }
 // Termin vorbei und weder erledigt noch entfallen
-function isLate(p){ return !p.done && !p.skip && p.date < todayIso(); }
+function isLate(p){ return !p.done && !p.skip && (p.end || p.date) < todayIso(); }
 
 function dueLists(){
   var t = todayIso(), w = addDays(t, 7), m = addDays(t, 21);
@@ -1377,7 +1511,7 @@ function dueLists(){
     var task = data.tasks.find(function(x){ return x.id === p.taskId; });
     if (!task) return;
     var it = { p: p, t: task, d: p.date };
-    if (p.date < t) out.late.push(it);
+    if ((p.end || p.date) < t) out.late.push(it);
     else if (p.date <= w) out.week.push(it);
     else if (p.date <= m) out.prep.push(it);
   });
@@ -1408,11 +1542,11 @@ function renderDue(){
         + '<button class="btn small ghost" onclick="dueAllDone()">Alle ' + L.late.length + ' als erledigt markieren</button></span></div>';
     }
     L[state.dueOpen].forEach(function(it){
-      var days = daysBetween(todayIso(), it.p.date);
+      var days = daysBetween(todayIso(), it.p.end || it.p.date);
       var pers = it.t.persons || 1;
       var meta = (it.t.area || "") + " · " + pers + (pers === 1 ? " Person" : " Personen")
         + (state.dueOpen === "prep" && it.t.tools ? " · " + it.t.tools : "");
-      h += '<div class="duerow"><span class="duedate">' + deOf(it.p.date)
+      h += '<div class="duerow"><span class="duedate">' + (isSpan(it.p) ? fmtRange(it.p.date, it.p.end) : deOf(it.p.date))
         + (state.dueOpen === "late" ? '<span class="dueago">seit ' + days + (days === 1 ? ' Tag' : ' Tagen') + '</span>' : '') + '</span>'
         + '<span class="duewhat">' + esc(it.t.title) + '<span class="workmeta">' + esc(meta) + '</span></span><span class="dueacts">'
         + '<button class="btn small primary" onclick="dueDone(\'' + it.p.id + '\')">✓ Erledigt</button>'
@@ -1551,7 +1685,7 @@ function buildXlsx(rows){
     + '<col min="3" max="3" width="20" customWidth="1"/><col min="4" max="4" width="44" customWidth="1"/>'
     + '<col min="5" max="5" width="11" customWidth="1"/><col min="6" max="6" width="38" customWidth="1"/>'
     + '<col min="7" max="7" width="34" customWidth="1"/><col min="8" max="8" width="10" customWidth="1"/>'
-    + '<col min="9" max="9" width="11" customWidth="1"/></cols><sheetData>';
+    + '<col min="9" max="9" width="11" customWidth="1"/><col min="10" max="10" width="13" customWidth="1"/></cols><sheetData>';
   rows.forEach(function(r, ri){
     sheet += '<row r="' + (ri + 1) + '">';
     r.forEach(function(c, ci){
@@ -1559,7 +1693,7 @@ function buildXlsx(rows){
     });
     sheet += '</row>';
   });
-  sheet += '</sheetData><autoFilter ref="A1:I' + rows.length + '"/></worksheet>';
+  sheet += '</sheetData><autoFilter ref="A1:J' + rows.length + '"/></worksheet>';
 
   var styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
     + '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
@@ -1715,7 +1849,7 @@ function printDayMenu(iso){
 // Baut das Tagesblatt auf und druckt es
 function printDay(iso, orientation){
   closeModal();
-  var eintraege = data.plan.filter(function(p){ return p.date === iso && !p.skip; })
+  var eintraege = data.plan.filter(function(p){ return planOn(p, iso) && !p.skip; })
     .map(function(p){ return { p: p, t: data.tasks.find(function(x){ return x.id === p.taskId; }) }; })
     .filter(function(e){ return e.t; });
   if (eintraege.length === 0) return toast("An diesem Tag ist nichts geplant");
@@ -1834,7 +1968,7 @@ function validData(d){
   var idOk = /^[A-Za-z0-9_-]{1,40}$/, dateOk = /^\d{4}-\d{2}-\d{2}$/;
   if (!d || typeof d !== "object" || !Array.isArray(d.tasks) || !Array.isArray(d.plan)) return false;
   if (!d.tasks.every(function(t){ return t && idOk.test(String(t.id)) && typeof t.title === "string"; })) return false;
-  if (!d.plan.every(function(p){ return p && idOk.test(String(p.id)) && idOk.test(String(p.taskId)) && dateOk.test(String(p.date)); })) return false;
+  if (!d.plan.every(function(p){ return p && idOk.test(String(p.id)) && idOk.test(String(p.taskId)) && dateOk.test(String(p.date)) && (!p.end || dateOk.test(String(p.end))); })) return false;
   return true;
 }
 
@@ -1880,19 +2014,19 @@ function restoreBackup(file){
 function planRows(){
   var prioName = { 1: "hoch", 2: "normal", 3: "niedrig" };
   var wds = ["So","Mo","Di","Mi","Do","Fr","Sa"];
-  var rows = [["Datum","Wochentag","Rubrik","Arbeit","Priorität","Werkzeug & Material","Sicherheitsausrüstung","Personen","Status"]];
+  var rows = [["Datum","Wochentag","Rubrik","Arbeit","Priorität","Werkzeug & Material","Sicherheitsausrüstung","Personen","Status","Ende"]];
   data.plan.slice().sort(function(a,b){ return a.date.localeCompare(b.date); }).forEach(function(p){
     var t = data.tasks.find(function(x){ return x.id === p.taskId; });
     if (!t) return;
     var d = new Date(p.date + "T12:00:00");
-    rows.push([deOf(p.date), wds[d.getDay()], t.area || "", t.title, prioName[t.prio], t.tools || "", (t.safety || []).join(", "), String(t.persons || 1), p.done ? "erledigt" : p.skip ? "entfällt" : "offen"]);
+    rows.push([deOf(p.date), wds[d.getDay()], t.area || "", t.title, prioName[t.prio], t.tools || "", (t.safety || []).join(", "), String(t.persons || 1), p.done ? "erledigt" : p.skip ? "entfällt" : "offen", isSpan(p) ? deOf(p.end) : ""]);
   });
   var planned = {};
   data.plan.forEach(function(p){ planned[p.taskId] = true; });
   data.tasks.filter(function(t){ return !planned[t.id]; })
     .sort(function(a,b){ return a.prio - b.prio || a.title.localeCompare(b.title); })
     .forEach(function(t){
-      rows.push(["nicht terminiert", "", t.area || "", t.title, prioName[t.prio], t.tools || "", (t.safety || []).join(", "), String(t.persons || 1), "offen"]);
+      rows.push(["nicht terminiert", "", t.area || "", t.title, prioName[t.prio], t.tools || "", (t.safety || []).join(", "), String(t.persons || 1), "offen", ""]);
     });
   return rows;
 }
@@ -2050,6 +2184,8 @@ function applyRows(rows){
       if (!dup){
         var np = { id: uid(), taskId: t.id, date: iso, done: done };
         if (String(r[8] || "").trim().toLowerCase() === "entfällt") np.skip = true;
+        var em = String(r[9] || "").trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+        if (em){ var eIso = em[3] + "-" + pad(parseInt(em[2], 10)) + "-" + pad(parseInt(em[1], 10)); if (eIso > iso) np.end = eIso; }
         data.plan.push(np);
         nPlan++;
       } else { nSkip++; if (done) dup.done = true; }
